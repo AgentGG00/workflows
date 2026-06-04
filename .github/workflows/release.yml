@@ -39,7 +39,11 @@ jobs:
           MINOR=$(echo $CURRENT | cut -d. -f2)
           PATCH=$(echo $CURRENT | cut -d. -f3)
 
-          COMMITS=$(git log ${CURRENT}..HEAD --pretty=format:"%s")
+          if [ "$CURRENT" = "v0.0.0" ]; then
+            COMMITS=$(git log --pretty=format:"%s")
+          else
+            COMMITS=$(git log ${CURRENT}..HEAD --pretty=format:"%s")
+          fi
 
           if echo "$COMMITS" | grep -qE '^.+!'; then
             MAJOR=$((MAJOR + 1))
@@ -50,7 +54,7 @@ jobs:
           fi
 
           echo "version=v${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
-
+          
       - name: Changelog generieren
         run: |
           VERSION=${{ steps.next_version.outputs.version }}
