@@ -1,0 +1,70 @@
+name: Foundry Version Bump
+
+on:
+  workflow_call:
+
+jobs:
+  bump:
+    if: "!contains(github.event.head_commit.message, 'chore(release):')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Determine latest tag
+        id: latest
+        run: |
+          TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$TAG" ]; then TAG="v0.0.0"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Compute new version
+        id: bump
+        run: |
+          node - <<'NODE'
+          const { execSync } = require("child_process");
+          const fs = require("fs");
+
+          const lastTag = "${{ steps.latest.outputs.tag }}";
+          const range = lastTag === "v0.0.0" ? "" : `${lastTag}..HEAD`;
+          const log = execSync(`git log ${range} --pretty=format:%s`).toString().split("\n").filter(Boolean);
+
+          const m = lastTag.replace(/^v/, "").split(".").map(Number);
+          const [major, minor, patch] = m.length === 3 ? m : [0, 0, 0];
+
+          let bMajor = 0, bMinor = 0, bPatch = 0;
+          for (const line of log) {
+            if (/^(feat|fix)(\(.+\))?!:/.test(line) || /BREAKING CHANGE/.test(line)) bMajor++;
+            else if (/^feat(\(.+\))?:/.test(line)) bMinor++;
+            else if (/^fix(\(.+\))?:/.test(line)) bPatch++;
+          }
+
+          const newVersion = `${major + bMajor}.${minor + bMinor}.${patch + bPatch}`;
+          const changed = bMajor + bMinor + bPatch > 0;
+
+          fs.writeFileSync(process.env.GITHUB_OUTPUT, `version=${newVersion}\nchanged=${changed}\n`, { flag: "a" });
+          NODE
+
+      - name: Update module.json
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const j = JSON.parse(fs.readFileSync("module.json", "utf8"));
+          j.version = "${{ steps.bump.outputs.version }}";
+          fs.writeFileSync("module.json", JSON.stringify(j, null, 2) + "\n");
+          NODE
+
+      - name: Commit version bump
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add module.json
+          git commit -m "chore(release): bump version to v${{ steps.bump.outputs.version }}"
+          git push origin ${{ github.ref_name }}
