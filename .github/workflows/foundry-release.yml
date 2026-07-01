@@ -1,0 +1,80 @@
+name: Foundry Release
+
+on:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from module.json
+        id: ver
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const j = JSON.parse(fs.readFileSync("module.json", "utf8"));
+          const v = (j.version || "").trim();
+          if (!/^\d+\.\d+\.\d+$/.test(v)) {
+            throw new Error(`module.json version must be x.y.z, got: "${v}"`);
+          }
+          fs.writeFileSync(process.env.GITHUB_OUTPUT, `version=${v}\ntag=v${v}\n`, { flag: "a" });
+          NODE
+
+      - name: Create tag if missing
+        id: tagcheck
+        run: |
+          if git rev-parse "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            git tag "${{ steps.ver.outputs.tag }}"
+            git push origin "${{ steps.ver.outputs.tag }}"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build compendium packs
+        if: hashFiles('.pack-sources/**') != ''
+        run: |
+          npm install -g @foundryvtt/foundryvtt-cli
+          for dir in .pack-sources/*/; do
+            name=$(basename "$dir")
+            mkdir -p "packs/$name"
+            fvtt package pack "$name" --inputDirectory ".pack-sources/$name/_source" --outputDirectory "packs/$name"
+          done
+
+      - name: Build ZIP
+        run: |
+          rm -f module-latest.zip
+          zip -r module-latest.zip . \
+            -x ".git/*" -x ".github/*" -x ".pack-sources/*" -x "node_modules/*" -x "*.zip"
+
+      - name: Fetch shared cliff.toml
+        run: curl -sL https://raw.githubusercontent.com/AgentGG00/workflows/main/cliff.toml -o cliff.toml
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: cliff.toml
+          args: --tag ${{ steps.ver.outputs.tag }} --strip all
+        env:
+          OUTPUT: CHANGELOG_RELEASE.md
+
+      - name: Create GitHub Release + upload asset
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          body_path: CHANGELOG_RELEASE.md
+          files: module-latest.zip
