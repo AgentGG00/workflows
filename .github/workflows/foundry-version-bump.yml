@@ -59,7 +59,7 @@ jobs:
           j.version = "${{ steps.bump.outputs.version }}";
           fs.writeFileSync("module.json", JSON.stringify(j, null, 2) + "\n");
           NODE
-          
+
       - name: Commit version bump
         if: steps.bump.outputs.changed == 'true'
         run: |
@@ -68,7 +68,14 @@ jobs:
           git add module.json
           git commit -m "chore(release): bump version to v${{ steps.bump.outputs.version }}"
           git push origin ${{ github.ref_name }}
-      
+
+      - name: Read module id
+        id: moduleid
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          MODULE_ID=$(node -pe "JSON.parse(require('fs').readFileSync('module.json', 'utf8')).id")
+          echo "id=$MODULE_ID" >> "$GITHUB_OUTPUT"
+
       - name: Pull on server via SSH
         if: steps.bump.outputs.changed == 'true'
         uses: appleboy/ssh-action@v1
@@ -76,7 +83,6 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
           script: |
-            cd /foundry/vtt-dev/docs/Data/modules/${{ github.event.repository.name }}
+            cd /foundry/vtt-dev/docs/Data/modules/${{ steps.moduleid.outputs.id }}
             git pull origin ${{ github.ref_name }}
