@@ -63,7 +63,7 @@ jobs:
         run: curl -sL https://raw.githubusercontent.com/AgentGG00/workflows/main/cliff.toml -o cliff.toml
 
       - name: Generate changelog
-        uses: orhun/git-cliff-action@v3
+        uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
           args: --tag ${{ steps.ver.outputs.tag }} --strip all
