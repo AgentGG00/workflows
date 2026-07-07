@@ -47,10 +47,10 @@ jobs:
         if: hashFiles('.pack-sources/**') != ''
         run: |
           npm install -g @foundryvtt/foundryvtt-cli
+          mkdir -p packs
           for dir in .pack-sources/*/; do
             name=$(basename "$dir")
-            mkdir -p "packs/$name"
-            fvtt package pack "$name" --inputDirectory ".pack-sources/$name/_source" --outputDirectory "packs/$name"
+            fvtt package pack "$name" --inputDirectory ".pack-sources/$name/_source" --outputDirectory "packs"
           done
 
       - name: Build ZIP
